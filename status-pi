@@ -1,0 +1,145 @@
+#!/usr/bin/python
+
+
+import sys
+import os
+import time
+import socket
+import datetime
+import argparse
+import traceback
+import logging
+import configparser
+import paho.mqtt.client as mqtt
+import RPi.GPIO as GPIO
+
+
+debug = False
+logger = None
+
+mqtt_client = None
+mqtt_topic = None
+
+red = 22
+green = 24
+blue = 26
+pins = (red, green, blue)
+
+
+def set_led(state):
+    pins = None
+    if state == 'RED':
+        pins = [[red, False], [green, True], [blue, True]]
+    elif state == 'YELLOW':
+        pins = [[red, False], [green, False], [blue, True]]
+    elif state == 'GREEN':
+        pins = [[red, True], [green, False], [blue, True]]
+    elif state == 'Up':
+        pins = [[red, False], [green, False], [blue, False]]
+    elif state == 'Down':
+        pins = [[red, False], [green, True], [blue, False]]
+    elif state == 'Disconnect':
+        pins = [[red, True], [green, True], [blue, False]]
+    else:
+        pins = [[red, False], [green, False], [blue, False]]
+    for pin in pins:
+        GPIO.output(pin[0], pin[1])
+
+def mqtt_on_connect(client, userdata, flags, rc):
+    logger.debug('on_connect: userdata=%s rc=%d' % (userdata, rc))
+    (result, mid) = client.subscribe(mqtt_topic + '/connected', 0)
+    logger.debug('on_connect: subscribe=(%d, %d)' % (result,  mid))
+    (result, mid) = client.subscribe(mqtt_topic + '/condition', 0)
+    logger.debug('on_connect: subscribe=(%d, %d)' % (result,  mid))
+
+def mqtt_on_disconnect(client, userdata, rc):
+    logger.debug('on_disconnect: userdata=%s rc=%d' % (userdata,  rc))
+    if rc != 0:
+        set_led('Disconnect')
+        logger.critical('on_disconnect: expected disconnection')
+
+def mqtt_on_message(client, userdata, message):
+    logger.debug('on_message: %s %s %d' %
+                 (message.topic, message.payload.decode("utf-8"), message.qos))
+    payload = message.payload.decode("utf-8")
+    if 'connected' in message.topic:
+        if payload == 'false':
+            set_led('Down')
+        else:
+            set_led('Up')
+    else:
+        set_led(payload)
+
+def mqtt_on_subscribe(client, userdata, mid, granted_qos):
+    logger.debug('on_subscribe: userdata=%s mid=%d granted_qos=%d' %
+                 (userdata, mid, granted_qos[0]))
+
+def mqtt_on_log(client, userdata, level, message):
+    logger.debug('on_log: userdata=%s level=%s message=%s' %
+                 (userdata, level, message))
+
+def mqtt_configure(configuration):
+
+    global mqtt_client
+    global mqtt_topic
+
+    mqtt_topic = configuration['mqtt'].get('topic', 'internet')
+    mqtt_server = configuration['mqtt'].get('server', 'localhost')
+    mqtt_port = int(configuration['mqtt'].get('port', '1883'))
+
+    mqtt_client = mqtt.Client('status_pi-' + socket.gethostname(), True)
+    mqtt_client.on_message = mqtt_on_message
+    mqtt_client.on_connect = mqtt_on_connect
+    mqtt_client.on_subscribe = mqtt_on_subscribe
+    mqtt_client.on_disconnect = mqtt_on_disconnect
+    #mqtt_client.on_log = mqtt_on_log
+
+    mqtt_client.connect(mqtt_server, mqtt_port, 60)
+
+def main():
+    
+    global logger
+
+    parser = argparse.ArgumentParser(description='Network Monitor')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='Use verbose logging.')
+    parser.add_argument('-c', '--file', action='store',
+                        default='/etc/internet-monitor.d/monitor.conf',
+                        help='Configuration file.')
+    arguments = parser.parse_args()
+
+    configuration = configparser.ConfigParser(allow_no_value=True)
+    configuration.read(arguments.file)
+    
+    level = int(configuration['logging'].get('level', '40'))
+    logger = logging.getLogger(__name__)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter('%(asctime)s %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(level)
+
+    mqtt_configure(configuration)
+
+    GPIO.setmode(GPIO.BOARD)
+    for pin in pins:
+        GPIO.setup(pin, GPIO.OUT)
+        GPIO.output(pin, True)
+
+    set_led('None')
+
+    try:
+        mqtt_client.loop_forever()
+    except KeyboardInterrupt:
+        GPIO.cleanup()
+        logger.info('Interrupted')
+
+    exit(0)
+
+if __name__ == '__main__':
+    try:
+        status = main()
+        sys.exit(status)
+    except Exception as e:
+        print(e)
+        traceback.print_exc()
+        os._exit(1)

@@ -1,0 +1,15 @@
+#
+# Configure internet monitor program
+#
+
+[Unit]
+Description=Internet Monitor Program
+After=network.target
+
+[Service]
+WorkingDirectory=/tmp
+ExecStart=/usr/local/bin/insernet-monitor
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

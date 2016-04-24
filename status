@@ -1,0 +1,58 @@
+#!/usr/bin/python
+
+import sys
+import os
+import socket
+import traceback
+
+unix = False
+server = None
+
+def main():
+
+    print('Opening socket ...')
+    if unix:
+        path = '/tmp/internet_monitor_socket'
+        if os.path.exists(path):
+            os.remove(path)
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        print('binding ...')
+        server.bind(path)
+    else:
+        host='localhost'
+        port = 22222
+        server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        server.bind((host, port))
+
+    print('listening ...')
+    done = False
+    while not done:
+        try:
+            data, address = server.recvfrom(4096)
+            if not data:
+                done = True
+            else:
+                data = data.decode('utf-8')
+                print(data)
+        except KeyboardInterrupt as k:
+            print('')
+            print('Interrupted')
+            done = True
+
+    print('Shutting down ...')
+    server.close()
+    if unix:
+        os.remove(path)
+
+    print('Exiting')
+
+    return 0
+
+if __name__ == '__main__':
+    try:
+        status = main()
+        sys.exit(status)
+    except Exception as e:
+        print(e)
+        traceback.print_exc()
+        os._exit(1)

@@ -1,0 +1,15 @@
+#
+# Configure internet monitor condition presenter running on a Raspberry Pi.
+#
+
+[Unit]
+Description=Internet Monitor Raspberry Pi Presentor
+After=network.target
+
+[Service]
+WorkingDirectory=/tmp
+ExecStart=/usr/local/bin/status-pi
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

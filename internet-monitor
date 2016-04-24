@@ -1,0 +1,226 @@
+#!/usr/bin/python
+
+import sys
+import os
+import time
+import datetime
+import logging
+import socket
+from collections import deque
+from collections import OrderedDict
+import argparse
+import traceback
+import subprocess
+import configparser
+import paho.mqtt.client as mqtt
+
+
+logger = None
+
+
+class Site(object):
+
+    def __init__(self, hostname):
+        self.hostname = hostname
+        self.up = False
+        self.attempts = 0
+        self.successes = 0
+        self.last_attempt = 0
+        self.last_success = 0
+        self.last_failure = 0
+
+    def ping(self):
+        self.attempts += 1
+        self.last_attempt = time.time()
+        args = ['ping', '-c 1', self.hostname]
+        process = subprocess.Popen(' '.join(args), shell=True,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        output, statistics = process.communicate()
+        response = process.returncode
+        if response == 0:
+            self.up = True
+            self.successes += 1
+            self.last_success = time.time()
+        else:
+            self.up = False
+            self.last_failure = time.time()
+        return response
+
+    def status(self):
+        return 'UP' if self.up else 'DOWN'
+
+    def uptime(self):
+        denominator = float(self.attempts if self.attempts > 0 else 1)
+        return int(100.0 * (float(self.successes) / denominator))
+
+
+class Status(object):
+
+    criteria = (("RED", 0.00), ("YELLOW", 0.30), ("GREEN", 0.70))
+
+    def __init__(self, observations=10):
+        self.iteration = 0
+        self.failures = 0
+        self.condition  = None
+        self.history = deque(maxlen=observations)
+        self.conditions = OrderedDict()
+        for name, threshold in Status.criteria:
+            self.conditions[name] = {
+                'name' : name,
+                'threshold': threshold,
+                'events': 0,
+                'last': 'None detected'
+            }
+
+    def update(self, response):
+        succeeded = True if response == 0 else False
+        self.history.append(int(succeeded))
+        self.iteration += 1
+        if not succeeded:
+            self.failures += 1
+        if len(self.history) == self.history.maxlen:
+            score = float(sum(self.history)) / float(len(self.history))
+            for condition in self.conditions:
+                if score >= self.conditions[condition]['threshold']:
+                    self.condition = condition
+            self.conditions[condition]['last'] = time_now()
+            self.conditions[condition]['events'] += 1
+
+    def generator(self):
+        for condition in self.conditions:
+            yield self.conditions[condition]
+
+    def last(self, condition):
+        return self.conditions[condition]['last']
+
+    def count(self, state):
+        return self.conditions[condition]['count']
+
+
+def report(status, sites, current, interval, now, runtime):
+    buffer = '\n'
+    buffer += '%s - Update interval: %d seconds\n' % (now, interval)
+    buffer += 'Status: %s  Iteration: %d  Failures: %d  Runtime: %s\n' % \
+              (status.condition, status.iteration, status.failures, runtime)
+    buffer += '-' * 80 + '\n'
+    for site in sites:
+        if current.hostname == site.hostname:
+            marker = '>>>'
+        else:
+            marker = '   '
+        buffer += '%s %-25s %-4s %3d%% uptime  %d of %d pings\n' % \
+                  (marker, site.hostname, site.status(), site.uptime(),
+                   site.successes, site.attempts)
+    buffer += '-' * 80 + '\n'
+    buffer += '\n'
+    for condition in status.generator():
+        buffer += '     %6s: %6s events  Last event: %s\n' % \
+                  (condition['name'], condition['events'], condition['last'])
+    buffer += '\n'
+    
+    if logger.getEffectiveLevel() > logging.DEBUG:
+        client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        client.sendto(buffer.encode('utf-8'), ('localhost', 22222))
+        client.close()
+    else:
+        print(buffer)
+
+def delay(interval):
+    time.sleep(interval - (time.time() % interval))
+
+def time_now():
+    return datetime.datetime.fromtimestamp(round(time.time()))
+
+mqtt_client = None
+mqtt_topic = None
+
+def mqtt_on_connect(client, userdata, flags, rc):
+    logger.debug('on_connect: userdata=%s rc=%d' % (userdata,  rc))
+    (result, mid) = client.publish(mqtt_topic + '/connected', 'true', 0, True)
+
+def mqtt_on_message(client, userdata, message):
+    logger.debug('on_message: %s %s %d' %
+                 (message.topic, message.payload.decode("utf-8"),
+                  message.qos[0]))
+
+def mqtt_on_publish(client, userdata, mid):
+    logger.debug('on_publish: userdata=%s mid=%d' % (userdata, mid))
+
+def mqtt_on_log(client, userdata, level, message):
+    logger.debug('on_log: userdata=%s level=%s message=%s' %
+                 (userdata, level, message))
+
+def mqtt_configure(configuration):
+
+    global mqtt_client
+    global mqtt_topic
+
+    mqtt_topic = configuration['mqtt'].get('topic', 'internet')
+    mqtt_server = configuration['mqtt'].get('server', 'localhost')
+    mqtt_port = int(configuration['mqtt'].get('port', '1883'))
+
+    mqtt_client = mqtt.Client('monitor-'+ socket.gethostname(), True)
+    mqtt_client.will_set(mqtt_topic + '/connected', 'false', 0, True)
+    mqtt_client.on_message = mqtt_on_message
+    mqtt_client.on_connect = mqtt_on_connect
+    mqtt_client.on_publish = mqtt_on_publish
+    #mqtt_client.on_log = mqtt_on_log
+
+    mqtt_client.loop_start()
+    mqtt_client.connect(mqtt_server, mqtt_port, 60)
+
+def main():
+
+    global logger
+    
+    parser = argparse.ArgumentParser(description='Network Monitor')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='Use verbose logging.')
+    parser.add_argument('-c', '--file', action='store',
+                        default='/etc/internet-monitor.d/monitor.conf',
+                        help='Configuration file.')
+    arguments = parser.parse_args()
+
+    configuration = configparser.ConfigParser(allow_no_value=True)
+    configuration.read(arguments.file)
+
+    interval = int(configuration['monitor'].get('interval', '15'))
+
+    level = int(configuration['logging'].get('level', '40'))
+    logger = logging.getLogger(__name__)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter('%(asctime)s %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(level)
+
+    mqtt_configure(configuration)
+
+    status = Status()
+    sites = []
+
+    for site in configuration.options('sites'):
+        sites.append(Site(site))
+
+    t0 = time_now()
+
+    index = 0
+    while True:
+        for current in sites:
+            now = time_now()
+            status.update(current.ping())
+            condition = status.condition
+            mqtt_client.publish(mqtt_topic + '/condition',
+                                condition if condition else 'None')
+            report(status, sites, current, interval, now, now - t0)
+            if condition:
+                delay(interval)
+
+if __name__ == '__main__':
+    try:
+        status = main()
+        sys.exit(status)
+    except Exception as e:
+        print(e)
+        traceback.print_exc()
+        os._exit(1)
