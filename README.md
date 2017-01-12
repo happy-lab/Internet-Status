@@ -1,29 +1,29 @@
 # Internet Monitor
-The Internet Monitor started as a few changes to the
+The Internet Status monitor started as a few changes to the
 [internetup](http://whiskeytangohotel.com/internetup) program.
-It got completely rewritten but the original command line output is used.
+It got completely rewritten but uses its original command line output.
 
 ## License
 Internet Monitor is released under a MIT [license](./LICENSE).
 
 ## Requirements
-* A flexible number of sites to poll.
-* The internet status to be available in more than one location.
+* Allow flexible number of sites to poll.
+* Provide the internet status to be available in more than one location.
 * Run on a headless system.
 * No log file to manage.
 
 ## Components
 
-### internet-monitor
+### internet-statusd
 Program to poll site to determine the condition of the internet connection.
-Publishes current condition to a ***MQTT*** server.  Also broadcast detailed
-status information using a sigle UDP packet to the local host.
+Publishes current condition to a ***MQTT*** server.  Also broadcasts detailed
+status information using a single UDP packet to the local host.
 
-### status-pi
-Program that subscribes to the topc on the ***MQTT*** server.
-Presents the internet condition on a single RGB LED.
+### internet-status_pi
+Program that subscribes to the topiic on the ***MQTT*** server.
+Presents the internet condition on a single RGB LED.  This program is provided as the basis for other presentation mechanisms.
 
-### status
+### internet-status
 Program to listen for the UDP packet and print it.
 
 ## Implementation
@@ -33,12 +33,12 @@ be installed.  The programs were developed and tested on **Arch Linux**
 systems running on ARM processors, a Fedora 22 system and OS X 10.11.
 
 ## Installation
-* Install and configur the MQTT server.
-* Copy the programs to the desired directory, e.g., `/usr/local/bin`
-on the monitor system and any Raspberry Pis for condition presentation.
-* Modify the configuation file and place in `/etc/internet-monitor.d/monitor.conf`
-* Modify as necessary the *service* files and place in the local systemd
-services directory, `/etc/systemd/system`.
+* Install and configure the MQTT server.
+* Install the programs
+	* On an **Arch Linux** system use *makepkg* and *pacman -S*
+	* Copy the programs to the desired directory, e.g., `/usr/local/bin`
+on the monitoring system and any Raspberry Pis for condition presentation.
+* Modify the configuation file and place in `/etc/internet-status/monitor.conf`
 * Enable the service(s) appropriate for the system.
 
 ## Usage
@@ -49,8 +49,8 @@ is presented at regular intervals.  The monitor program could be changed
 to broadcast on the subnet and the status program run on any system if
 desired.
 
-Running the status_pi will present the status on a LED(s) using
-the GPIO pins.  The presentation can be easily changed to to suppot
+Running the internet-status_pi will present the status on a LED(s) using
+the GPIO pins.  The presentation can be easily changed to to support
 multiple LEDs, toy traffic lights, flags on servo motors, ...
 
 ## Things To Do
@@ -61,6 +61,5 @@ the ***ping*** command.
 * Develop a generic ***Presenter*** class to abstract presenting
 the internet condition.
 * Use the prior to support using a *blink(1)*.
-* Complete ***pacman*** build.
-* Provide the abaility to blink the LED when running on a Raspberry Pi.
+* Provide the ability to blink the LED when running on a Raspberry Pi.
 * Better documentation.

@@ -3,12 +3,12 @@
 #
 
 [Unit]
-Description=Internet Monitor Raspberry Pi Presentor
+Description=Internet Status Raspberry Pi Presenter
 After=network.target
 
 [Service]
 WorkingDirectory=/tmp
-ExecStart=/usr/local/bin/status-pi
+ExecStart=/usr/bin/internet-status_pi
 KillMode=process
 
 [Install]

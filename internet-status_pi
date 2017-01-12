@@ -104,7 +104,7 @@ def main():
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Use verbose logging.')
     parser.add_argument('-c', '--file', action='store',
-                        default='/etc/internet-monitor.d/monitor.conf',
+                        default='/etc/internet-status/monitor.conf',
                         help='Configuration file.')
     arguments = parser.parse_args()
 

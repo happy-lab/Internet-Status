@@ -1,0 +1,20 @@
+#
+# Configure internet status monitor service
+#
+
+[Unit]
+Description=Internet Status Daemon
+Documentation=man:internet-status(1)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/tmp
+ExecStart=/usr/bin/internet-statusd
+#ExecStart=/usr/bin/internet-statusd -c /etc/internet-monitor/monitor.conf
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+
