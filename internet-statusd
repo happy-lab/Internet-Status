@@ -82,8 +82,9 @@ class Status(object):
         if len(self.history) == self.history.maxlen:
             score = float(sum(self.history)) / float(len(self.history))
             for condition in self.conditions:
-                if score >= self.conditions[condition]['threshold']:
+                if score <= self.conditions[condition]['threshold']:
                     self.condition = condition
+                    break
             self.conditions[condition]['last'] = time_now()
             self.conditions[condition]['events'] += 1
 
