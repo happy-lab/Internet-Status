@@ -57,7 +57,7 @@ class Site(object):
 
 class Status(object):
 
-    criteria = (("RED", 0.00), ("YELLOW", 0.30), ("GREEN", 0.70))
+    criteria = (("RED", 0.30), ("YELLOW", 0.60), ("GREEN", 1.0))
 
     def __init__(self, observations=10):
         self.iteration = 0

@@ -17,7 +17,7 @@ source=("LICENSE"
         "monitor.conf.example")
 install=internet-status.install
 sha256sums=('86efd6ff86cea002a35a41101f8e56966f30889bfc8b5a210707de9ec8d4945f'
-            'b35b939a646cefefa7933b0ac92df3f4e48c3bca3eff5be4c378f5e950a684f8'
+            '46357d4d785009de1a4ba3a966316c460fa5050386fc40249e8f9430e4d0cdb1'
             '8c2d472cc2b1fd18bf7b925d62ad2a6b5713f49bcd7f85ae327bd37d6152a629'
             '0e20e302c6be1764afa385883a6f9064704bd25d9db9bdba76f4a66da218bd35'
             '71e768af6ad0084e8b7dc574f6198cd1543875b94ecbe8cc8ee81d510118fc28'
