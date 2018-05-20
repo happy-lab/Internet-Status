@@ -62,6 +62,7 @@ class Status(object):
     def __init__(self, observations=10):
         self.iteration = 0
         self.failures = 0
+        self.score  = 0.0
         self.condition  = None
         self.history = deque(maxlen=observations)
         self.conditions = OrderedDict()
@@ -80,9 +81,9 @@ class Status(object):
         if not succeeded:
             self.failures += 1
         if len(self.history) == self.history.maxlen:
-            score = float(sum(self.history)) / float(len(self.history))
+            self.score = float(sum(self.history)) / float(len(self.history))
             for condition in self.conditions:
-                if score <= self.conditions[condition]['threshold']:
+                if self.score <= self.conditions[condition]['threshold']:
                     self.condition = condition
                     break
             self.conditions[condition]['last'] = time_now()
@@ -210,6 +211,7 @@ def main():
         for current in sites:
             now = time_now()
             status.update(current.ping())
+            mqtt_client.publish(mqtt_topic + '/score', str(round(status.score, 2)))
             condition = status.condition
             mqtt_client.publish(mqtt_topic + '/condition',
                                 condition if condition else 'None')

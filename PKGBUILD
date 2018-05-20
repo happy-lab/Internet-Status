@@ -1,9 +1,9 @@
 #
-# This is the PKGBUILD for Internet Status Publish Through MQTT Package
+# This is the PKGBUILD for Internet Status Publish Through MQTT.
 #
 
 pkgname=internet-status
-pkgver=1.1.0
+pkgver=1.1.1
 pkgrel=1
 pkgdesc="Internet Status Publish Through MQTT"
 arch=('i686' 'x86_64' 'arm' 'armv6h' 'armv7h')
@@ -12,12 +12,15 @@ depends=('python')
 provides=('internet-status')
 license=('MIT')
 source=("LICENSE"
-        "internet-statusd" "internet-status.service"
-        "internet-status" "internet-status_pi" "internet-status_pi.service"
+        "internet-statusd"
+        "internet-status.service"
+        "internet-status"
+        "internet-status_pi"
+        "internet-status_pi.service"
         "monitor.conf.example")
 install=internet-status.install
 sha256sums=('86efd6ff86cea002a35a41101f8e56966f30889bfc8b5a210707de9ec8d4945f'
-            '46357d4d785009de1a4ba3a966316c460fa5050386fc40249e8f9430e4d0cdb1'
+            '1e8e6f1cbc4883c069afbd5941bcce4803391a34f79965dbd889e9786c5ba6a0'
             '8c2d472cc2b1fd18bf7b925d62ad2a6b5713f49bcd7f85ae327bd37d6152a629'
             '0e20e302c6be1764afa385883a6f9064704bd25d9db9bdba76f4a66da218bd35'
             '71e768af6ad0084e8b7dc574f6198cd1543875b94ecbe8cc8ee81d510118fc28'
