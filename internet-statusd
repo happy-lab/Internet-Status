@@ -3,6 +3,8 @@
 import sys
 import os
 import time
+import signal
+import threading
 import datetime
 import logging
 import socket
@@ -12,11 +14,13 @@ import argparse
 import traceback
 import subprocess
 import configparser
+import json
 import paho.mqtt.client as mqtt
 
 
-logger = None
-
+#
+# Class that describes and manages site information.
+#
 
 class Site(object):
 
@@ -48,26 +52,30 @@ class Site(object):
         return response
 
     def status(self):
-        return 'UP' if self.up else 'DOWN'
+        return 'Up' if self.up else 'Down'
 
     def uptime(self):
         denominator = float(self.attempts if self.attempts > 0 else 1)
         return int(100.0 * (float(self.successes) / denominator))
 
 
+#
+# Class that maintains the Internet connection's status.
+#
+
 class Status(object):
 
-    criteria = (("RED", 0.30), ("YELLOW", 0.60), ("GREEN", 1.0))
+    criteria = (("down", 0.15), ("unstable", 0.60), ("up", 1.0))
 
     def __init__(self, observations=10):
         self.iteration = 0
         self.failures = 0
         self.score  = 0.0
-        self.condition  = None
+        self.state  = None
         self.history = deque(maxlen=observations)
-        self.conditions = OrderedDict()
+        self.states = OrderedDict()
         for name, threshold in Status.criteria:
-            self.conditions[name] = {
+            self.states[name] = {
                 'name' : name,
                 'threshold': threshold,
                 'events': 0,
@@ -82,29 +90,34 @@ class Status(object):
             self.failures += 1
         if len(self.history) == self.history.maxlen:
             self.score = float(sum(self.history)) / float(len(self.history))
-            for condition in self.conditions:
-                if self.score <= self.conditions[condition]['threshold']:
-                    self.condition = condition
+            for state in self.states:
+                if self.score <= self.states[state]['threshold']:
+                    self.state = state
                     break
-            self.conditions[condition]['last'] = time_now()
-            self.conditions[condition]['events'] += 1
+            self.states[state]['last'] = time_now()
+            self.states[state]['events'] += 1
 
     def generator(self):
-        for condition in self.conditions:
-            yield self.conditions[condition]
+        for state in self.states:
+            yield self.states[state]
 
-    def last(self, condition):
-        return self.conditions[condition]['last']
+    def last(self, state):
+        return self.states[state]['last']
 
     def count(self, state):
-        return self.conditions[condition]['count']
+        return self.states[state]['count']
 
+
+#
+# Send the Internet connect status and the sites as a
+# simple text datagram on the 'localhost'.
+#
 
 def report(status, sites, current, interval, now, runtime):
     buffer = '\n'
     buffer += '%s - Update interval: %d seconds\n' % (now, interval)
     buffer += 'Status: %s  Iteration: %d  Failures: %d  Runtime: %s\n' % \
-              (status.condition, status.iteration, status.failures, runtime)
+              (status.state, status.iteration, status.failures, runtime)
     buffer += '-' * 80 + '\n'
     for site in sites:
         if current.hostname == site.hostname:
@@ -116,9 +129,9 @@ def report(status, sites, current, interval, now, runtime):
                    site.successes, site.attempts)
     buffer += '-' * 80 + '\n'
     buffer += '\n'
-    for condition in status.generator():
+    for state in status.generator():
         buffer += '     %6s: %6s events  Last event: %s\n' % \
-                  (condition['name'], condition['events'], condition['last'])
+                  (state['name'], state['events'], state['last'])
     buffer += '\n'
     
     if logger.getEffectiveLevel() > logging.DEBUG:
@@ -128,14 +141,71 @@ def report(status, sites, current, interval, now, runtime):
     else:
         print(buffer)
 
+
+#
+# Signal handling.
+#
+
+terminate = threading.Event()
+
+def signal_handler(signum, frame):
+    terminate.set()
+    mqtt_client.disconnect()
+
+
+#
+# Compute the delay until the next interval boundary.
+#
+
 def delay(interval):
-    time.sleep(interval - (time.time() % interval))
+    return interval - (time.time() % interval)
+
+
+#
+# Current date and time.
+#
 
 def time_now():
     return datetime.datetime.fromtimestamp(round(time.time()))
 
-mqtt_client = None
-mqtt_topic = None
+
+#
+# Thread collecting Internet speed every hour on the hour.
+#
+
+speedtest_lock = threading.Lock()
+speedtest_result = None
+
+def speedtest(interval):
+
+    global speedtest_result
+
+    args = ['/usr/bin/speedtest', '--json']
+
+    while not terminate.wait(delay(interval)):
+
+        process = subprocess.Popen(' '.join(args), shell=True,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        stdout, stderr = process.communicate()
+        returncode =  process.returncode
+        if  returncode != 0:
+            message = '{} - {} / {}'.format(returncode,
+                                            stdout.decode('utf-8'),
+                                            stderr.decode('utf-8'))
+            logger.error('speedtest: error - {}'.format(message))
+
+        result = json.loads(stdout.decode('utf-8'))
+        with speedtest_lock:
+            if process.returncode == 0:
+                speedtest_result = result
+            else:
+                speedtest_result = None
+
+
+#
+# MQTT connection and message handlers.
+#
 
 def mqtt_on_connect(client, userdata, flags, rc):
     logger.debug('on_connect: userdata=%s rc=%d' % (userdata,  rc))
@@ -153,10 +223,34 @@ def mqtt_on_log(client, userdata, level, message):
     logger.debug('on_log: userdata=%s level=%s message=%s' %
                  (userdata, level, message))
 
-def mqtt_configure(configuration):
 
-    global mqtt_client
-    global mqtt_topic
+#
+# Main routine.
+#
+
+if __name__ == '__main__':
+    
+    parser = argparse.ArgumentParser(description='Network Monitor')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='Use verbose logging.')
+    parser.add_argument('-c', '--file', action='store',
+                        default='/etc/internet-status/monitor.conf',
+                        help='Configuration file.')
+    arguments = parser.parse_args()
+
+    configuration = configparser.ConfigParser(allow_no_value=True)
+    configuration.read(arguments.file)
+
+    ping_interval = int(configuration['monitor'].get('interval', '15'))
+
+    speedtest_interval = int(configuration['speedtest'].get('interval', '3600'))
+
+    level = int(configuration['logging'].get('level', '40'))
+    logger = logging.getLogger(__name__)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter('%(asctime)s %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(level)
 
     mqtt_topic = configuration['mqtt'].get('topic', 'internet')
     mqtt_server = configuration['mqtt'].get('server', 'localhost')
@@ -172,31 +266,8 @@ def mqtt_configure(configuration):
     mqtt_client.loop_start()
     mqtt_client.connect(mqtt_server, mqtt_port, 60)
 
-def main():
-
-    global logger
-    
-    parser = argparse.ArgumentParser(description='Network Monitor')
-    parser.add_argument('-v', '--verbose', action='store_true',
-                        help='Use verbose logging.')
-    parser.add_argument('-c', '--file', action='store',
-                        default='/etc/internet-status/monitor.conf',
-                        help='Configuration file.')
-    arguments = parser.parse_args()
-
-    configuration = configparser.ConfigParser(allow_no_value=True)
-    configuration.read(arguments.file)
-
-    interval = int(configuration['monitor'].get('interval', '15'))
-
-    level = int(configuration['logging'].get('level', '40'))
-    logger = logging.getLogger(__name__)
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter('%(asctime)s %(message)s'))
-    logger.addHandler(handler)
-    logger.setLevel(level)
-
-    mqtt_configure(configuration)
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
     status = Status()
     sites = []
@@ -204,26 +275,32 @@ def main():
     for site in configuration.options('sites'):
         sites.append(Site(site))
 
+    speedtest_thread = threading.Thread(target=speedtest, args=(speedtest_interval,))
+    speedtest_thread.start()
+
     t0 = time_now()
 
     index = 0
-    while True:
-        for current in sites:
-            now = time_now()
-            status.update(current.ping())
-            mqtt_client.publish(mqtt_topic + '/score', str(round(status.score, 2)))
-            condition = status.condition
-            mqtt_client.publish(mqtt_topic + '/condition',
-                                condition if condition else 'None')
-            report(status, sites, current, interval, now, now - t0)
-            if condition:
-                delay(interval)
+    ping_delay = 0.001
+    while not terminate.wait(ping_delay):
 
-if __name__ == '__main__':
-    try:
-        status = main()
-        sys.exit(status)
-    except Exception as e:
-        print(e)
-        traceback.print_exc()
-        os._exit(1)
+        now = time_now()
+
+        current = sites[index % len(sites)]
+        index += 1
+        status.update(current.ping())
+
+        message = {'status': {'score': round(status.score, 2),
+                              'state': status.state}}
+        with speedtest_lock:
+            if speedtest_result:
+                message['speedtest'] = speedtest_result
+                speedtest_result = None
+        mqtt_client.publish(mqtt_topic, json.dumps(message))
+
+        report(status, sites, current, ping_interval, now, now - t0)
+
+        if not status.state:
+            ping_delay = ping_interval
+
+    sys.exit(0)

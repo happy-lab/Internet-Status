@@ -11,6 +11,9 @@ level = 40
 [monitor]
 interval = 15
 
+[speedtest]
+interval = 3600
+
 [mqtt]
 topic = internet
 server=localhost
