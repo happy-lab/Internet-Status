@@ -6,6 +6,7 @@ import time
 import signal
 import threading
 import datetime
+import re
 import logging
 import socket
 from collections import deque
@@ -29,6 +30,10 @@ class Site(object):
         self.up = False
         self.attempts = 0
         self.successes = 0
+        self.rtt_count = 0
+        self.rtt_min = sys.float_info.max
+        self.rtt_max = 0.0
+        self.rtt_tot = 0.0
         self.last_attempt = 0
         self.last_success = 0
         self.last_failure = 0
@@ -36,20 +41,39 @@ class Site(object):
     def ping(self):
         self.attempts += 1
         self.last_attempt = time.time()
-        args = ['ping', '-c 1', self.hostname]
+        args = ['/bin/ping', '-c 1', self.hostname]
         process = subprocess.Popen(' '.join(args), shell=True,
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
-        output, statistics = process.communicate()
+        stdout, stderr = process.communicate()
         response = process.returncode
         if response == 0:
             self.up = True
             self.successes += 1
             self.last_success = time.time()
+            pattern = '.*\n' + \
+                      'rtt min/avg/max/mdev = ' + \
+                      '([\d]+\.[\d]+)' + '/' + \
+                      '([\d]+\.[\d]+)' + '/' + \
+                      '([\d]+\.[\d]+)' + '/' + \
+                      '([\d]+\.[\d]+)' + ' ms\n'
+            match = re.search(pattern, stdout.decode('utf-8'))
+            if match:
+                self.rtt_count += 1
+                self.rtt_min = min(self.rtt_min, float(match.group(1)))
+                self.rtt_tot += float(match.group(2))
+                self.rtt_max = max(self.rtt_max, float(match.group(3)))
         else:
             self.up = False
             self.last_failure = time.time()
         return response
+
+    def rtt_times(self):
+        if self.rtt_count > 0:
+            times = (self.rtt_min, (self.rtt_tot / self.rtt_count), self.rtt_max)
+        else:
+            times = (0.0, 0.0, 0.0)
+        return times
 
     def status(self):
         return 'Up' if self.up else 'Down'
@@ -124,13 +148,15 @@ def report(status, sites, current, interval, now, runtime):
             marker = '>>>'
         else:
             marker = '   '
-        buffer += '%s %-25s %-4s %3d%% uptime  %d of %d pings\n' % \
+        times = site.rtt_times()
+        buffer += '%3s %-25s %-4s  %3d%% %d/%d pings  %.3f/%.3f/%.3f ms\n' % \
                   (marker, site.hostname, site.status(), site.uptime(),
-                   site.successes, site.attempts)
+                   site.successes, site.attempts,
+                   times[0], times[1], times[2])
     buffer += '-' * 80 + '\n'
     buffer += '\n'
     for state in status.generator():
-        buffer += '     %6s: %6s events  Last event: %s\n' % \
+        buffer += '     %10s: %6d events  Last event: %s\n' % \
                   (state['name'], state['events'], state['last'])
     buffer += '\n'
     
@@ -209,7 +235,7 @@ def speedtest(interval):
 
 def mqtt_on_connect(client, userdata, flags, rc):
     logger.debug('on_connect: userdata=%s rc=%d' % (userdata,  rc))
-    (result, mid) = client.publish(mqtt_topic + '/connected', 'true', 0, True)
+    (result, mid) = client.publish(mqtt_topic, '{"connected": "true"}', 0, True)
 
 def mqtt_on_message(client, userdata, message):
     logger.debug('on_message: %s %s %d' %
@@ -257,7 +283,7 @@ if __name__ == '__main__':
     mqtt_port = int(configuration['mqtt'].get('port', '1883'))
 
     mqtt_client = mqtt.Client('monitor-'+ socket.gethostname(), True)
-    mqtt_client.will_set(mqtt_topic + '/connected', 'false', 0, True)
+    mqtt_client.will_set(mqtt_topic, '{"connected": "false"}', 0, True)
     mqtt_client.on_message = mqtt_on_message
     mqtt_client.on_connect = mqtt_on_connect
     mqtt_client.on_publish = mqtt_on_publish

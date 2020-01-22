@@ -28,7 +28,7 @@ def main():
     done = False
     while not done:
         try:
-            data, address = server.recvfrom(4096)
+            data, address = server.recvfrom(8192)
             if not data:
                 done = True
             else:
