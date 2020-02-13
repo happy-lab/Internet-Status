@@ -320,9 +320,11 @@ if __name__ == '__main__':
                               'state': status.state}}
         with speedtest_lock:
             if speedtest_result:
-                message['speedtest'] = speedtest_result
+                message['speeds'] = speedtest_result
                 speedtest_result = None
-        mqtt_client.publish(mqtt_topic, json.dumps(message))
+        for topic in message:
+             mqtt_client.publish(mqtt_topic + '/' + topic, json.dumps(message[topic]))
+        # XXX - As one message - mqtt_client.publish(mqtt_topic, json.dumps(message))
 
         report(status, sites, current, ping_interval, now, now - t0)
 
