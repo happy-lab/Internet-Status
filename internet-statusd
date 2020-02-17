@@ -235,7 +235,8 @@ def speedtest(interval):
 
 def mqtt_on_connect(client, userdata, flags, rc):
     logger.debug('on_connect: userdata=%s rc=%d' % (userdata,  rc))
-    (result, mid) = client.publish(mqtt_topic, '{"connected": "true"}', 0, True)
+    (result, mid) = client.publish(mqtt_topic + '/connection',
+                                   '{"connected": "true"}', 0, True)
 
 def mqtt_on_message(client, userdata, message):
     logger.debug('on_message: %s %s %d' %
@@ -283,7 +284,8 @@ if __name__ == '__main__':
     mqtt_port = int(configuration['mqtt'].get('port', '1883'))
 
     mqtt_client = mqtt.Client('monitor-'+ socket.gethostname(), True)
-    mqtt_client.will_set(mqtt_topic, '{"connected": "false"}', 0, True)
+    mqtt_client.will_set(mqtt_topic + '/connection',
+                         '{"connected": "false"}', 0, True)
     mqtt_client.on_message = mqtt_on_message
     mqtt_client.on_connect = mqtt_on_connect
     mqtt_client.on_publish = mqtt_on_publish
