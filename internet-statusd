@@ -194,7 +194,7 @@ def delay(interval):
 #
 
 def time_now():
-    return datetime.datetime.fromtimestamp(round(time.time()))
+    return datetime.datetime.now(datetime.timezone.utc)
 
 
 #
