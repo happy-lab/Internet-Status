@@ -223,7 +223,12 @@ def speedtest(interval):
                                             stderr.decode('utf-8'))
             logger.error('speedtest: error - {}'.format(message))
 
-        result = json.loads(stdout.decode('utf-8'))
+        message = stdout.decode('utf-8')
+        try:
+            result = json.loads(message)
+        except json.decoder.JSONDecodeError as e:
+            logger.error('speedtest: JSON decoder error - "{}"'.format(message))
+
         with speedtest_lock:
             if process.returncode == 0:
                 speedtest_result = result
@@ -332,9 +337,9 @@ if __name__ == '__main__':
             if speedtest_result:
                 message['speeds'] = speedtest_result
                 speedtest_result = None
-        for topic in message:
-             mqtt_client.publish(mqtt_topic + '/' + topic, json.dumps(message[topic]))
         # XXX - As one message - mqtt_client.publish(mqtt_topic, json.dumps(message))
+        for topic in message:
+            mqtt_client.publish(mqtt_topic + '/' + topic, json.dumps(message[topic]))
 
         report(status, sites, current, ping_interval, now, now - t0)
 
@@ -342,3 +347,4 @@ if __name__ == '__main__':
             ping_delay = ping_interval
 
     sys.exit(0)
+                                                                                                                                                                                           

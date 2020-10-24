@@ -19,7 +19,7 @@ source=('internet-statusd'
         'monitor.conf.example'
         'LICENSE')
 install=internet-status.install
-sha256sums=('6abc74f0e5b04af7ed4a8b510f4d268b1c7c679df55402344307743ce4e9f123'
+sha256sums=('65e599cf98e80c03e430e5da708c35b70d9ea7b2352efddec7986a10419e01a3'
             '8c2d472cc2b1fd18bf7b925d62ad2a6b5713f49bcd7f85ae327bd37d6152a629'
             'fa5fa8d2985f71f974418c781203646d0d95b792336a5938b7ffaf4ae80c7052'
             '71e768af6ad0084e8b7dc574f6198cd1543875b94ecbe8cc8ee81d510118fc28'
